@@ -6,18 +6,18 @@ An extension of [Patil et al.'s Lyapunov-based DNN (Lb-DNN)](https://faculty.sit
 
 The Lb-DNN stability proof (Patil et al.) guarantees UUB error provided the optimal weight matrix **W\*** stays approximately constant. This holds when the disturbance depends only on position — the same state always maps to the same wind force, so a memoryless encoder can learn it.
 
-When the disturbance has a **temporal component** (e.g. `F(t, x) = sin(0.4t) + sin(0.8x)`), **W\*** must change at every timestep to track the wind phase. The Lyapunov update rule pushes **Ŵ** in conflicting directions and the error grows unboundedly.
+With a **purely temporal disturbance**, `φ(pos, vel)` carries zero information about the current wind. The online update rule pushes **Ŵ** toward the instantaneous wind at every step, but the target changes every step with no correlation to the features — **Ŵ** converges to the time-average (≈ 0) and the residual error equals the full wind magnitude. Closed-loop, this means the PD + DNN system is effectively PD-only against an uncompensated ~1 N disturbance, which destabilizes it.
 
-The RSSM fixes this by feeding the GRU hidden state `h_t` as part of the feature vector `φ_t = [h_t, z_t]`. The hidden state encodes recent trajectory history, implicitly tracking temporal wind phase. With `h_t` included, the mapping from `φ_t` to wind force becomes approximately stationary again, restoring the Lyapunov condition.
+The RSSM fixes this by including the GRU hidden state `h_t` in the feature vector `φ_t = [h_t, z_t]`. `h_t` is updated every step from the sequence of `[pos, vel]` observations, implicitly tracking where the drone is in the temporal wind cycle. The mapping from `φ_t` to wind force is now approximately stationary, restoring the Lyapunov convergence condition.
 
 ## Results
 
-Wind model: `Fx = 0.7·sin(0.4t) + 0.4·sin(0.8x)`, `Fy = 0.5·cos(0.3t) + 0.3·cos(0.9y)`, `Fz = 0.25·sin(0.5t)`
+Wind: `Fx = 0.8·sin(0.4t)`,  `Fy = 0.6·cos(0.3t)`,  `Fz = 0.35·sin(0.5t)`  — purely temporal, no spatial component.
 
 | Controller | RMS error (tail 5 s) | Max error |
 |------------|----------------------|-----------|
-| Lb-DNN     | 4.53 m               | 12.85 m   |
-| Lb-RSSM    | **0.48 m**           | **0.76 m** |
+| Lb-DNN     | 111.5 m *(diverges)* | 136.5 m   |
+| Lb-RSSM    | **0.43 m**           | **0.87 m** |
 
 ![Comparison](figures/quad_compare_temporal.png)
 

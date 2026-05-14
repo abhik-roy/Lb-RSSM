@@ -36,13 +36,14 @@ class Quadrotor:
         ])
 
     def wind(self, t, pos):
-        # Mixed disturbance: temporal component (sin(t)) + spatial component (sin(x))
-        # DNN encoder is memoryless → cannot track temporal phase → diverges
-        # RSSM GRU hidden state encodes temporal context → stays bounded
+        # Purely temporal disturbance: no spatial component.
+        # φ(pos, vel) carries zero information about wind phase, so W_hat
+        # converges to the time-average (≈ 0) and the residual error persists.
+        # RSSM: h_t tracks the temporal cycle implicitly → error drops.
         ws = self.wind_scale
-        Fx = ws * (0.7*np.sin(0.4*t) + 0.4*np.sin(0.8*pos[0]))
-        Fy = ws * (0.5*np.cos(0.3*t) + 0.3*np.cos(0.9*pos[1]))
-        Fz = ws *  0.25*np.sin(0.5*t)
+        Fx = ws * 0.8*np.sin(0.4*t)
+        Fy = ws * 0.6*np.cos(0.3*t)
+        Fz = ws * 0.35*np.sin(0.5*t)
         return np.array([Fx, Fy, Fz])
 
     def derivatives(self, state, T, tau, t):

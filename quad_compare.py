@@ -48,23 +48,34 @@ def plot_comparison(logs):
     err_dnn  = np.linalg.norm(dnn["e_pos"],  axis=1)
     err_rssm = np.linalg.norm(rssm["e_pos"], axis=1)
 
+    rms_dnn  = np.sqrt(np.mean(err_dnn[-5000:]**2))
+    rms_rssm = np.sqrt(np.mean(err_rssm[-5000:]**2))
+
     fig = plt.figure(figsize=(14, 10))
-    gs  = gridspec.GridSpec(3, 2, figure=fig, hspace=0.42, wspace=0.32)
+    gs  = gridspec.GridSpec(3, 2, figure=fig, hspace=0.48, wspace=0.35)
 
     CDNN  = "#2196F3"
     CRSSM = "#FF5722"
 
-    ax = fig.add_subplot(gs[0, :])
-    ax.plot(t, err_dnn,  color=CDNN,  lw=1.4, label="Lb-DNN")
-    ax.plot(t, err_rssm, color=CRSSM, lw=1.4, label="Lb-RSSM")
-    ax.axhline(0.15, color="k", lw=0.8, linestyle=":", alpha=0.5)
-    ax.set_ylabel("||e_pos|| (m)")
-    ax.set_title("Position tracking error — temporal wind  "
-                 f"[DNN RMS={np.sqrt(np.mean(err_dnn[-5000:]**2)):.3f} m   "
-                 f"RSSM RMS={np.sqrt(np.mean(err_rssm[-5000:]**2)):.3f} m]")
-    ax.legend()
-    ax.set_xlim(0, t[-1])
+    # ── Row 0: error — DNN full scale (left), RSSM zoomed (right) ────────────
+    ax_dnn = fig.add_subplot(gs[0, 0])
+    ax_dnn.plot(t, err_dnn, color=CDNN, lw=1.4)
+    ax_dnn.set_ylabel("||e_pos|| (m)")
+    ax_dnn.set_title(f"Lb-DNN  (RMS = {rms_dnn:.1f} m — diverges)",
+                     color=CDNN, fontweight="bold")
+    ax_dnn.set_xlim(0, t[-1])
 
+    ax_rssm = fig.add_subplot(gs[0, 1])
+    ax_rssm.plot(t, err_rssm, color=CRSSM, lw=1.4)
+    ax_rssm.axhline(0.15, color="k", lw=0.8, linestyle=":", alpha=0.5,
+                    label="0.15 m")
+    ax_rssm.set_ylabel("||e_pos|| (m)")
+    ax_rssm.set_title(f"Lb-RSSM  (RMS = {rms_rssm:.3f} m — bounded)",
+                      color=CRSSM, fontweight="bold")
+    ax_rssm.set_xlim(0, t[-1])
+    ax_rssm.legend(fontsize=8)
+
+    # ── Row 1: wind Fx estimation ─────────────────────────────────────────────
     for col, (name, log, color) in enumerate([
             ("Lb-DNN",  dnn,  CDNN),
             ("Lb-RSSM", rssm, CRSSM)]):
@@ -73,20 +84,29 @@ def plot_comparison(logs):
                 label="True Fx")
         ax.plot(t, log["wind_est"][:,  0], color=color, lw=1.3,
                 label=f"{name} estimate")
+        # clip y so DNN's runaway estimate doesn't crush the signal
+        y_max = max(log["wind_true"][:, 0].max() * 2.5, 1.5)
+        ax.set_ylim(-y_max, y_max)
         ax.set_ylabel("Force (N)")
-        ax.set_title(f"{name} — wind Fx learning")
+        ax.set_title(f"{name} — wind Fx estimation")
         ax.legend(fontsize=8)
         ax.set_xlim(0, t[-1])
 
+    # ── Row 2: overlay on capped axis (left) + RSSM σ_t (right) ─────────────
+    cap = min(err_rssm.max() * 6, 3.0)
     ax0 = fig.add_subplot(gs[2, 0])
-    ax0.plot(t, err_dnn,  color=CDNN,  lw=1.3, label="DNN ||e||")
-    ax0.plot(t, err_rssm, color=CRSSM, lw=1.3, label="RSSM ||e||")
+    ax0.plot(t, np.clip(err_dnn, 0, cap * 1.05),
+             color=CDNN, lw=1.3, label=f"DNN (→ {rms_dnn:.0f} m RMS)")
+    ax0.plot(t, err_rssm, color=CRSSM, lw=1.3, label=f"RSSM ({rms_rssm:.2f} m RMS)")
+    ax0.axhline(cap, color=CDNN, lw=0.7, linestyle=":", alpha=0.6,
+                label="DNN off-scale ↑")
+    ax0.set_ylim(0, cap * 1.1)
     ax0.set_ylabel("Error (m)"); ax0.set_xlabel("Time (s)")
-    ax0.set_title("Error overlay (tail shows steady-state)")
+    ax0.set_title("Overlay — DNN clipped at plot ceiling")
     ax0.legend(fontsize=8); ax0.set_xlim(0, t[-1])
 
     ax1 = fig.add_subplot(gs[2, 1])
-    ax1.plot(t, rssm["sigma"], color="#FF9800", lw=1.3, label="σ_t")
+    ax1.plot(t, rssm["sigma"], color="#FF9800", lw=1.3, label="σ_t (uncertainty)")
     ax1.plot(t, rssm["ball"],  color="#9C27B0", lw=1.1, linestyle="--",
              label="Lyapunov ball")
     ax1.plot(t, err_rssm, color=CRSSM, lw=1.0, alpha=0.6, label="||e||")
@@ -94,8 +114,9 @@ def plot_comparison(logs):
     ax1.set_title("RSSM: σ_t uncertainty vs actual error")
     ax1.legend(fontsize=8); ax1.set_xlim(0, t[-1])
 
-    plt.suptitle("Lb-DNN vs Lb-RSSM — mixed temporal + spatial wind",
-                 fontsize=13, fontweight="bold")
+    plt.suptitle("Lb-DNN vs Lb-RSSM — purely temporal wind\n"
+                 "φ(pos, vel) carries no temporal information → DNN W* never converges",
+                 fontsize=12, fontweight="bold")
     path = os.path.join(OUT, "quad_compare_temporal.png")
     plt.savefig(path, dpi=150, bbox_inches="tight")
     plt.close()
